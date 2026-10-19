@@ -1,0 +1,482 @@
+---
+title: "Homework 3"
+author: "Ruichen Yang"
+date: "2026-10-19"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(p8105.datasets)
+library(patchwork)
+```
+
+## Problem 1
+
+```{r}
+data("ny_noaa")
+
+dim(ny_noaa)
+names(ny_noaa)
+head(ny_noaa)
+```
+```{r}
+ny_noaa_clean = ny_noaa |>
+  mutate(
+    year = lubridate::year(date),
+    month = lubridate::month(date),
+    day = lubridate::day(date),
+    prcp = prcp / 10,
+    tmax = as.numeric(tmax) / 10,
+    tmin = as.numeric(tmin) / 10
+  )
+
+dim(ny_noaa_clean)
+head(ny_noaa_clean)
+```
+
+```{r}
+missing_summary = ny_noaa_clean |>
+  summarize(
+    across(
+      c(prcp, snow, snwd, tmax, tmin),
+      ~ mean(is.na(.))
+    )
+  )
+
+missing_summary
+
+snow_common = ny_noaa_clean |>
+  filter(!is.na(snow)) |>
+  count(snow, sort = TRUE)
+
+head(snow_common, 10)
+```
+
+
+The cleaned NOAA dataset contains 2,595,176 observations. The main variables include station ID, date, precipitation, snowfall, snow depth, and daily maximum and minimum temperatures. I also created separate year, month, and day variables and converted precipitation and temperature to more interpretable units. Missingness varies across variables: about 5.6% of precipitation values are missing, compared with 14.7% for snowfall, 22.8% for snow depth, and about 43.7% for both maximum and minimum temperature.
+The most common snowfall value is 0 mm, which makes sense because most station-days do not have snowfall. Other common values include 25, 13, 51, 76, and 102 mm. These values are close to common snowfall measurements in inches converted to millimeters, such as 1, 0.5, 2, 3, and 4 inches.
+
+
+```{r}
+temp_month_plot = ny_noaa_clean |>
+  filter(month %in% c(1, 7)) |>
+  mutate(
+    month = recode(
+      month,
+      `1` = "January",
+      `7` = "July"
+    )
+  ) |>
+  group_by(id, year, month) |>
+  summarize(
+    mean_tmax = mean(tmax, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(!is.nan(mean_tmax))
+
+ggplot(
+  temp_month_plot,
+  aes(x = year, y = mean_tmax, group = id)
+) +
+  geom_line(alpha = 0.15) +
+  facet_grid(. ~ month) +
+  labs(
+    x = "Year",
+    y = "Average Maximum Temperature (°C)",
+    title = "Average Maximum Temperature in January and July"
+  )
+```
+
+
+The January and July panels show a clear seasonal difference in average maximum temperature. January temperatures are much lower and also show more variability across stations and years, while July temperatures are generally concentrated around the upper 20s °C. I also notice a few potential outliers, including unusually low January averages and several July station-year averages that fall well below the main cluster.
+
+
+```{r}
+temp_plot = ny_noaa_clean |>
+  filter(!is.na(tmin), !is.na(tmax)) |>
+  ggplot(aes(x = tmin, y = tmax)) +
+  geom_bin_2d(bins = 40) +
+  labs(
+    x = "Minimum Temperature (°C)",
+    y = "Maximum Temperature (°C)",
+    title = "Maximum vs Minimum Temperature"
+  )
+```
+
+
+```{r}
+snow_plot = ny_noaa_clean |>
+  filter(
+    !is.na(snow),
+    snow > 0,
+    snow < 100
+  ) |>
+  ggplot(aes(x = year, y = snow, group = year)) +
+  geom_boxplot() +
+  scale_x_continuous(breaks = seq(1980, 2010, by = 5)) +
+  labs(
+    x = "Year",
+    y = "Snowfall (mm)",
+    title = "Distribution of Snowfall by Year"
+  )
+```
+
+```{r, fig.width=9, fig.height=10}
+temp_plot / snow_plot
+```
+
+Maximum and minimum temperatures have a strong positive relationship, with most observations following a clear diagonal pattern. For snowfall values between 0 and 100 mm, the yearly distributions are fairly similar overall, although a few years have somewhat different spreads and high outliers.
+
+
+## Problem 2
+
+
+```{r}
+nhanes_accel = read_csv(
+  "data/nhanes_accel.csv",
+  show_col_types = FALSE
+)
+
+nhanes_covar = read_csv(
+  "data/nhanes_covar.csv",
+  skip = 4,
+  show_col_types = FALSE
+) |>
+  janitor::clean_names()
+
+dim(nhanes_covar)
+names(nhanes_covar)
+head(nhanes_covar)
+```
+
+
+```{r}
+nhanes_covar_clean = nhanes_covar |>
+  filter(age >= 21) |>
+  drop_na(sex, age, bmi, education) |>
+  mutate(
+    sex = factor(
+      sex,
+      levels = c(1, 2),
+      labels = c("Male", "Female")
+    ),
+    education = factor(
+      education,
+      levels = c(1, 2, 3),
+      labels = c(
+        "Less than high school",
+        "High school equivalent",
+        "More than high school"
+      ),
+      ordered = TRUE
+    )
+  )
+
+dim(nhanes_covar_clean)
+head(nhanes_covar_clean)
+table(nhanes_covar_clean$sex)
+table(nhanes_covar_clean$education)
+```
+
+
+```{r}
+nhanes_accel_long = nhanes_accel |>
+  pivot_longer(
+    cols = starts_with("min"),
+    names_to = "minute",
+    values_to = "mims"
+  ) |>
+  mutate(
+    minute = parse_number(minute)
+  )
+
+dim(nhanes_accel_long)
+head(nhanes_accel_long)
+```
+
+
+```{r}
+nhanes_clean = nhanes_covar_clean |>
+  inner_join(
+    nhanes_accel_long,
+    by = c("seqn" = "SEQN")
+  )
+
+dim(nhanes_clean)
+head(nhanes_clean)
+```
+
+
+```{r}
+education_table = nhanes_covar_clean |>
+  count(education, sex) |>
+  pivot_wider(
+    names_from = sex,
+    values_from = n,
+    values_fill = 0
+  )
+
+education_table
+```
+
+
+```{r}
+ggplot(
+  nhanes_covar_clean,
+  aes(x = age, fill = sex)
+) +
+  geom_density(alpha = 0.4) +
+  facet_wrap(~ education, nrow = 1) +
+  labs(
+    x = "Age",
+    y = "Density",
+    fill = "Sex",
+    title = "Age Distribution by Sex and Education Level"
+  )
+```
+
+
+The age distributions differ across education levels and between men and women. For participants with less than a high school education, the male and female distributions are fairly similar, with more observations at older ages. In the high school equivalent group, women appear to be somewhat older on average than men. Among participants with more than a high school education, women are more concentrated at younger ages, while the male distribution is more spread out across the age range.
+
+
+```{r}
+total_activity = nhanes_clean |>
+  group_by(seqn, sex, age, education) |>
+  summarize(
+    total_activity = sum(mims, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(
+  total_activity,
+  aes(x = age, y = total_activity, color = sex)
+) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(se = FALSE) +
+  facet_wrap(~ education, nrow = 1) +
+  labs(
+    x = "Age",
+    y = "Total Daily Activity",
+    color = "Sex",
+    title = "Total Daily Activity by Age, Sex, and Education Level"
+  )
+```
+
+
+Overall, total daily activity tends to decrease with age across all three education groups. The pattern is not exactly the same for men and women, but both groups generally show lower activity at older ages. The differences between men and women also vary across education levels, with the smooth curves separating more clearly at some ages than others.
+
+
+```{r}
+ggplot(
+  activity_time,
+  aes(x = minute, y = mean_mims, color = sex)
+) +
+  geom_line(linewidth = 0.7, alpha = 0.8) +
+  geom_smooth(se = FALSE, linewidth = 0.8) +
+  facet_wrap(~ education, nrow = 1) +
+  scale_x_continuous(
+    breaks = c(0, 360, 720, 1080, 1440),
+    labels = c("12 AM", "6 AM", "12 PM", "6 PM", "12 AM")
+  ) +
+  labs(
+    x = "Time of Day",
+    y = "Average MIMS",
+    color = "Sex",
+    title = "24-Hour Activity Patterns by Sex and Education Level"
+  ) +
+  theme(
+    axis.text.x = element_text(size = 8),
+    strip.text = element_text(size = 9)
+  )
+```
+
+The 24-hour activity patterns are fairly similar across the three education groups. Activity is lowest overnight, rises quickly in the morning, stays relatively high through the daytime, and then declines again in the evening. Men and women follow similar daily patterns overall, although women appear to have slightly higher activity during parts of the daytime in the high school equivalent and more than high school groups. The differences are not very large, but the plot suggests some variation in activity level by both sex and education.
+
+
+## Problem 3
+```{r}
+list.files(
+  "data/citibike",
+  full.names = TRUE
+)
+```
+
+
+```{r}
+citibike_files = list.files(
+  "data/citibike",
+  pattern = "\\.zip$",
+  full.names = TRUE
+)
+
+map(
+  citibike_files,
+  ~ unzip(.x, list = TRUE)
+)
+```
+
+
+```{r}
+jan2020_sample = read_csv(
+  unz(
+    "data/citibike/Jan 2020 Citi.csv.zip",
+    "Jan 2020 Citi.csv"
+  ),
+  n_max = 5,
+  show_col_types = FALSE
+)
+
+jan2024_sample = read_csv(
+  unz(
+    "data/citibike/Jan 2024 Citi.csv.zip",
+    "Jan 2024 Citi.csv"
+  ),
+  n_max = 5,
+  show_col_types = FALSE
+)
+
+names(jan2020_sample)
+names(jan2024_sample)
+
+jan2020_sample
+jan2024_sample
+```
+
+```{r}
+jan2020 = read_csv(
+  unz(
+    "data/citibike/Jan 2020 Citi.csv.zip",
+    "Jan 2020 Citi.csv"
+  ),
+  show_col_types = FALSE
+) |>
+  mutate(
+    year = 2020,
+    month = "January"
+  )
+
+july2020 = read_csv(
+  unz(
+    "data/citibike/July 2020 Citi.csv.zip",
+    "July 2020 Citi.csv"
+  ),
+  show_col_types = FALSE
+) |>
+  mutate(
+    year = 2020,
+    month = "July"
+  )
+
+jan2024 = read_csv(
+  unz(
+    "data/citibike/Jan 2024 Citi.csv.zip",
+    "Jan 2024 Citi.csv"
+  ),
+  show_col_types = FALSE
+) |>
+  mutate(
+    year = 2024,
+    month = "January"
+  )
+
+july2024 = read_csv(
+  unz(
+    "data/citibike/July 2024 Citi.csv.zip",
+    "July 2024 Citi.csv"
+  ),
+  show_col_types = FALSE
+) |>
+  mutate(
+    year = 2024,
+    month = "July"
+  )
+
+citibike = bind_rows(
+  jan2020,
+  july2020,
+  jan2024,
+  july2024
+)
+
+dim(citibike)
+names(citibike)
+head(citibike)
+```
+
+
+```{r}
+citibike |>
+  count(rideable_type)
+
+citibike |>
+  count(weekdays)
+
+citibike |>
+  count(member_casual)
+
+citibike |>
+  summarize(
+    missing_duration = sum(is.na(duration)),
+    missing_start_station = sum(is.na(start_station_name)),
+    missing_end_station = sum(is.na(end_station_name)),
+    missing_member = sum(is.na(member_casual))
+  )
+```
+
+```{r}
+citibike_clean = citibike |>
+  mutate(
+    weekdays = factor(
+      weekdays,
+      levels = c(
+        "Monday", "Tuesday", "Wednesday",
+        "Thursday", "Friday", "Saturday", "Sunday"
+      ),
+      ordered = TRUE
+    ),
+    month = factor(
+      month,
+      levels = c("January", "July"),
+      ordered = TRUE
+    ),
+    member_casual = factor(
+      member_casual,
+      levels = c("casual", "member"),
+      labels = c("Casual", "Member")
+    ),
+    rideable_type = factor(
+      rideable_type,
+      levels = c("classic_bike", "electric_bike"),
+      labels = c("Classic bike", "Electric bike")
+    )
+  )
+
+dim(citibike_clean)
+head(citibike_clean)
+```
+
+```{r}
+ride_count_table = citibike_clean |>
+  count(year, month, member_casual) |>
+  pivot_wider(
+    names_from = member_casual,
+    values_from = n,
+    values_fill = 0
+  )
+
+ride_count_table
+ride_count_table |>
+  knitr::kable(
+    col.names = c("Year", "Month", "Casual Riders", "Citi Bike Members"),
+    caption = "Number of Citi Bike Rides by Year, Month, and Membership Status"
+  )
+```
+
+
+
+
+
+
