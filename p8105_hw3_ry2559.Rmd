@@ -270,6 +270,13 @@ Overall, total daily activity tends to decrease with age across all three educat
 
 
 ```{r}
+activity_time = nhanes_clean |>
+  group_by(education, sex, minute) |>
+  summarize(
+    mean_mims = mean(mims, na.rm = TRUE),
+    .groups = "drop"
+  )
+
 ggplot(
   activity_time,
   aes(x = minute, y = mean_mims, color = sex)
