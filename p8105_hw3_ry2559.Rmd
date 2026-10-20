@@ -475,6 +475,39 @@ ride_count_table |>
   )
 ```
 
+```{r}
+top_stations = citibike_clean |>
+  filter(
+    year == 2024,
+    month == "July",
+    !is.na(start_station_name)
+  ) |>
+  count(start_station_name, sort = TRUE) |>
+  slice_head(n = 5)
+
+top_stations |>
+  knitr::kable(
+    col.names = c("Starting Station", "Number of Rides"),
+    caption = "Five Most Popular Starting Stations in July 2024"
+  )
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
