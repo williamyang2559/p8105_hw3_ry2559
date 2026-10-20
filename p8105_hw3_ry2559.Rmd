@@ -493,12 +493,73 @@ top_stations |>
 ```
 
 
+```{r}
+ride_duration_summary = citibike_clean |>
+  group_by(year, month, weekdays) |>
+  summarize(
+    median_duration = median(duration, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(
+  ride_duration_summary,
+  aes(
+    x = weekdays,
+    y = median_duration,
+    color = month,
+    group = month
+  )
+) +
+  geom_point(size = 2) +
+  geom_line() +
+  facet_wrap(~ year) +
+  scale_x_discrete(
+    limits = c(
+      "Monday", "Tuesday", "Wednesday",
+      "Thursday", "Friday", "Saturday", "Sunday"
+    )
+  ) +
+  labs(
+    x = "Day of Week",
+    y = "Median Ride Duration (minutes)",
+    color = "Month",
+    title = "Median Ride Duration by Day, Month, and Year"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
 
 
+Median ride duration is generally higher in July than in January for both years. Rides in 2020 also tend to be longer than rides in 2024. Within each month, weekend rides are usually a little longer than weekday rides, especially in July 2020. Overall, the differences by month and year are more noticeable than the differences across individual days of the week.
 
+```{r}
+citibike_2024 = citibike_clean |>
+  filter(year == 2024)
 
+ggplot(
+  citibike_2024,
+  aes(
+    x = member_casual,
+    y = duration,
+    fill = member_casual
+  )
+) +
+  geom_boxplot(
+    outlier.alpha = 0.15,
+    width = 0.6
+  ) +
+  facet_grid(month ~ rideable_type) +
+  scale_y_log10() +
+  labs(
+    x = "Membership Status",
+    y = "Ride Duration (minutes, log scale)",
+    fill = "Membership Status",
+    title = "Ride Duration by Month, Membership Status, and Bike Type in 2024"
+  )
+```
 
-
+I see that casual riders generally have longer ride durations than members across both months and both bike types. Ride durations are also generally higher in July than in January, especially for casual riders. The differences between classic and electric bikes are smaller than the differences by membership status and month. Overall, membership status seems to have the clearest relationship with ride duration.
 
 
 
